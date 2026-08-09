@@ -95,9 +95,9 @@ void run_server(const struct p101_env *env, struct p101_error *err, struct setti
 
     if(sets->very_verbose)
     {
-        p101_fsm_info_set_bad_change_state_notifier(fsm, p101_fsm_info_default_bad_change_state_notifier);
-        p101_fsm_info_set_will_change_state_notifier(fsm, p101_fsm_info_default_will_change_state_notifier);
-        p101_fsm_info_set_did_change_state_notifier(fsm, p101_fsm_info_default_did_change_state_notifier);
+        p101_fsm_info_set_bad_change_state_notifier(env, fsm, p101_fsm_info_default_bad_change_state_notifier);
+        p101_fsm_info_set_will_change_state_notifier(env, fsm, p101_fsm_info_default_will_change_state_notifier);
+        p101_fsm_info_set_did_change_state_notifier(env, fsm, p101_fsm_info_default_did_change_state_notifier);
     }
 
     data.sets           = sets;

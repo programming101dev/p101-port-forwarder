@@ -55,7 +55,7 @@ static long  generate_random_long(const struct p101_env *env, long min, long max
 void handle_connection(const struct p101_env *env, struct p101_error *err, void *arg, struct p101_fsm_effect_sink *sink, struct p101_fsm_decision *decision)
 {
     struct server_data *data;
-    p101_fsm_state_t    next_state;
+    p101_fsm_state_id   next_state;
     socklen_t           addr_len;
     in_port_t           net_port;
     pthread_t           from_forwarder = p101_pthread_self(env);

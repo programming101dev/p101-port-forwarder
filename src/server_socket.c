@@ -13,7 +13,7 @@
 void socket_create(const struct p101_env *env, struct p101_error *err, void *arg, struct p101_fsm_effect_sink *sink, struct p101_fsm_decision *decision)
 {
     struct server_data *data;
-    p101_fsm_state_t    next_state;
+    p101_fsm_state_id   next_state;
 
     P101_TRACE_SCOPE(env);
     (void)sink;
@@ -37,7 +37,7 @@ void socket_bind(const struct p101_env *env, struct p101_error *err, void *arg, 
     struct server_data *data;
     socklen_t           addr_len;
     in_port_t           net_port;
-    p101_fsm_state_t    next_state;
+    p101_fsm_state_id   next_state;
 
     P101_TRACE_SCOPE(env);
     (void)sink;
@@ -93,7 +93,7 @@ done:
 void socket_listen(const struct p101_env *env, struct p101_error *err, void *arg, struct p101_fsm_effect_sink *sink, struct p101_fsm_decision *decision)
 {
     const struct server_data *data;
-    p101_fsm_state_t          next_state;
+    p101_fsm_state_id         next_state;
 
     P101_TRACE_SCOPE(env);
     (void)sink;
@@ -116,7 +116,7 @@ void socket_accept(const struct p101_env *env, struct p101_error *err, void *arg
 {
     struct p101_error  *accept_err;
     struct server_data *data;
-    p101_fsm_state_t    next_state;
+    p101_fsm_state_id   next_state;
 
     P101_TRACE_SCOPE(env);
     (void)sink;
