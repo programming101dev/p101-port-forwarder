@@ -83,6 +83,11 @@ router, firewall, DNS, or third-party TCP behavior.
 
 The binary lands in the configured build directory (e.g. `build-clang/p101-port-forwarder`). Run it with no arguments to see the usage message listing the required listening/forwarding addresses, ports, and backlog.
 
+The process exit status is zero after a clean forwarding session and non-zero
+when argument validation, setup, forwarding, or cleanup reports an error. The
+program cannot prove anything about traffic that never reaches its admitted
+listening socket.
+
 ## **Adding or Removing Files**
 
 The `CMakeLists.txt` is fixed and shared across every repository — do not edit it. When you add or remove a source or header, edit the `p101_port_forwarder_*` lists in `config.cmake`, then re-configure and build:

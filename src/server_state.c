@@ -32,7 +32,10 @@ void server_active_threads_reset(const struct p101_env *env)
 
 unsigned int server_active_threads_load(const struct p101_env *env)
 {
-    return p101_atomic_uint_load(env, &active_threads);
+    unsigned int value;
+
+    value = p101_atomic_uint_load(env, &active_threads);
+    return value;
 }
 
 void server_active_threads_increment(const struct p101_env *env)

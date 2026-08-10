@@ -32,6 +32,11 @@ void run_server(const struct p101_env *env, struct p101_error *err, struct setti
         {HANDLE,        CLEANUP, cleanup          }
     };
     struct server_data data;
+    bool               has_error;
+    bool               fsm_has_error;
+    bool               no_error;
+    bool               fsm_no_error;
+    const char        *message;
 
     P101_TRACE_SCOPE(env);
     fsm_err = NULL;
@@ -40,21 +45,24 @@ void run_server(const struct p101_env *env, struct p101_error *err, struct setti
 
     check_settings(env, err, sets);
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto error;
     }
 
     sockaddr_to_string(env, err, &sets->addr_in, ip_in_str, INET6_ADDRSTRLEN);
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto error;
     }
 
     sockaddr_to_string(env, err, &sets->addr_out, ip_out_str, INET6_ADDRSTRLEN);
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto error;
     }
@@ -62,7 +70,8 @@ void run_server(const struct p101_env *env, struct p101_error *err, struct setti
     p101_printf(env, err, "Starting port forwarder %s:%d -> %s:%d\n", ip_in_str, sets->port_in, ip_out_str, sets->port_out);
     setup_signal_handler(env, err);
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto error;
     }
@@ -70,9 +79,11 @@ void run_server(const struct p101_env *env, struct p101_error *err, struct setti
     fsm_err = p101_error_create(false);
     fsm_env = p101_env_create(fsm_err, NULL);
 
-    if(p101_error_has_error(fsm_err))
+    fsm_has_error = p101_error_has_error(fsm_err);
+    if(fsm_has_error)
     {
-        P101_ERROR_RAISE_USER(err, p101_error_get_message(fsm_err), 1);
+        message = p101_error_get_message(fsm_err);
+        P101_ERROR_RAISE_USER(err, message, 1);
         goto error;
     }
 
@@ -83,12 +94,14 @@ void run_server(const struct p101_env *env, struct p101_error *err, struct setti
 
     fsm = p101_fsm_info_create(env, err, "port-forwarder", fsm_env, fsm_err, transitions, sizeof(transitions) / sizeof(transitions[0]), NULL);
 
-    if(p101_error_has_error(fsm_err))
+    fsm_has_error = p101_error_has_error(fsm_err);
+    if(fsm_has_error)
     {
         goto error;
     }
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto error;
     }
@@ -105,19 +118,23 @@ void run_server(const struct p101_env *env, struct p101_error *err, struct setti
     data.client_socket  = -1;
     data.forward_socket = -1;
 
-    fsm_result = p101_fsm_run(fsm, &data, NULL, &last_step);
-    if(fsm_result != P101_FSM_RUN_EXITED && p101_error_has_no_error(err) && p101_error_has_no_error(fsm_err))
+    fsm_result   = p101_fsm_run(fsm, &data, NULL, &last_step);
+    no_error     = p101_error_has_no_error(err);
+    fsm_no_error = p101_error_has_no_error(fsm_err);
+    if(fsm_result != P101_FSM_RUN_EXITED && no_error && fsm_no_error)
     {
         P101_ERROR_RAISE_USER(err, "Port-forwarder FSM stopped before exit", 1);
         goto error;
     }
 
-    if(p101_error_has_error(fsm_err))
+    fsm_has_error = p101_error_has_error(fsm_err);
+    if(fsm_has_error)
     {
         goto error;
     }
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto error;
     }
@@ -125,9 +142,12 @@ void run_server(const struct p101_env *env, struct p101_error *err, struct setti
     goto done;
 
 error:
-    if(p101_error_has_no_error(err) && p101_error_has_error(fsm_err))
+    no_error      = p101_error_has_no_error(err);
+    fsm_has_error = p101_error_has_error(fsm_err);
+    if(no_error && fsm_has_error)
     {
-        P101_ERROR_RAISE_USER(err, p101_error_get_message(fsm_err), 1);
+        message = p101_error_get_message(fsm_err);
+        P101_ERROR_RAISE_USER(err, message, 1);
     }
 
 done:

@@ -14,13 +14,17 @@ void socket_create(const struct p101_env *env, struct p101_error *err, void *arg
 {
     struct server_data *data;
     p101_fsm_state_id   next_state;
+    int                 socket_fd;
+    bool                has_error;
 
     P101_TRACE_SCOPE(env);
     (void)sink;
     data                = (struct server_data *)arg;
-    data->server_socket = p101_socket(env, err, data->sets->addr_in.ss_family, SOCK_STREAM, 0);
+    socket_fd           = p101_socket(env, err, data->sets->addr_in.ss_family, SOCK_STREAM, 0);
+    data->server_socket = socket_fd;
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         next_state = CLEANUP;
     }
@@ -38,6 +42,7 @@ void socket_bind(const struct p101_env *env, struct p101_error *err, void *arg, 
     socklen_t           addr_len;
     in_port_t           net_port;
     p101_fsm_state_id   next_state;
+    bool                has_error;
 
     P101_TRACE_SCOPE(env);
     (void)sink;
@@ -68,14 +73,16 @@ void socket_bind(const struct p101_env *env, struct p101_error *err, void *arg, 
 
     p101_setsockopt(env, err, data->server_socket, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto error;
     }
 
     p101_bind(env, err, data->server_socket, (struct sockaddr *)&data->sets->addr_in, addr_len);
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto error;
     }
@@ -94,13 +101,15 @@ void socket_listen(const struct p101_env *env, struct p101_error *err, void *arg
 {
     const struct server_data *data;
     p101_fsm_state_id         next_state;
+    bool                      has_error;
 
     P101_TRACE_SCOPE(env);
     (void)sink;
     data = (struct server_data *)arg;
     p101_listen(env, err, data->server_socket, data->sets->backlog);
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         next_state = CLEANUP;
     }
@@ -117,13 +126,20 @@ void socket_accept(const struct p101_env *env, struct p101_error *err, void *arg
     struct p101_error  *accept_err;
     struct server_data *data;
     p101_fsm_state_id   next_state;
+    bool                exit_requested;
+    bool                is_interrupted;
+    bool                no_error;
+    bool                has_error;
+    bool                retry;
+    int                 client_socket;
 
     P101_TRACE_SCOPE(env);
     (void)sink;
     accept_err = NULL;
     data       = (struct server_data *)arg;
 
-    if(server_exit_requested())
+    exit_requested = server_exit_requested();
+    if(exit_requested)
     {
         next_state = CLEANUP;
         goto done;
@@ -138,19 +154,28 @@ void socket_accept(const struct p101_env *env, struct p101_error *err, void *arg
         goto done;
     }
 
-    do
+    retry = true;
+    while(retry)
     {
-        data->client_socket = p101_accept(env, accept_err, data->server_socket, NULL, NULL);
+        client_socket       = p101_accept(env, accept_err, data->server_socket, NULL, NULL);
+        data->client_socket = client_socket;
+        is_interrupted      = p101_error_is_errno(accept_err, EINTR);
+        exit_requested      = server_exit_requested();
 
-        if(p101_error_is_errno(accept_err, EINTR) && !server_exit_requested())
+        if(is_interrupted && !exit_requested)
         {
             p101_error_reset(accept_err);
         }
-    } while(p101_error_has_no_error(accept_err) && data->client_socket == -1 && !server_exit_requested());
+        no_error = p101_error_has_no_error(accept_err);
+        retry    = (no_error && data->client_socket == -1 && !exit_requested) != 0;
+    }
 
-    if(p101_error_has_error(accept_err))
+    has_error = p101_error_has_error(accept_err);
+    if(has_error)
     {
-        if(p101_error_is_errno(accept_err, EINTR) && server_exit_requested())
+        is_interrupted = p101_error_is_errno(accept_err, EINTR);
+        exit_requested = server_exit_requested();
+        if(is_interrupted && exit_requested)
         {
             p101_error_reset(accept_err);
         }
@@ -163,7 +188,8 @@ void socket_accept(const struct p101_env *env, struct p101_error *err, void *arg
     }
     else
     {
-        if(server_exit_requested())
+        exit_requested = server_exit_requested();
+        if(exit_requested)
         {
             next_state = CLEANUP;
         }

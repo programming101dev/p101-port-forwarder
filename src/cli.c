@@ -49,12 +49,15 @@ void usage(const struct p101_env *env, struct p101_error *err, const char *progr
 
 void parse_arguments(const struct p101_env *env, struct p101_error *err, int argc, char *argv[], struct arguments *args)
 {
-    int opt;
+    int  opt;
+    int  printable_result;
+    bool printable;
 
     P101_TRACE_SCOPE(env);
     opterr = 0;
 
-    while((opt = p101_getopt(env, argc, argv, ":hvVl:a:p:A:P:s:S:n:N:b:B:")) != -1)
+    opt = p101_getopt(env, argc, argv, ":hvVl:a:p:A:P:s:S:n:N:b:B:");
+    while(opt != -1)
     {
         switch(opt)
         {
@@ -140,7 +143,9 @@ void parse_arguments(const struct p101_env *env, struct p101_error *err, int arg
             {
                 char message[OPTION_MESSAGE_LEN];
 
-                if(p101_isprint(env, optopt))
+                printable_result = p101_isprint(env, optopt);
+                printable        = printable_result != 0;
+                if(printable)
                 {
                     p101_snprintf(env, err, message, sizeof(message), "Unknown option '-%c'.", optopt);
                 }
@@ -157,6 +162,7 @@ void parse_arguments(const struct p101_env *env, struct p101_error *err, int arg
                 break;
             }
         }
+        opt = p101_getopt(env, argc, argv, ":hvVl:a:p:A:P:s:S:n:N:b:B:");
     }
 
     if(optind < argc)
@@ -223,54 +229,70 @@ done:
 
 void convert_arguments(const struct p101_env *env, struct p101_error *err, const struct arguments *args, struct settings *sets)
 {
-    time_t min_time_t;
-    time_t max_time_t;
+    time_t       min_time_t;
+    time_t       max_time_t;
+    int          backlog;
+    in_port_t    port;
+    time_t       parsed_time;
+    long         parsed_long;
+    unsigned int parsed_unsigned;
+    bool         has_error;
 
     P101_TRACE_SCOPE(env);
     min_time_t         = get_time_t_min(env, err);
     max_time_t         = get_time_t_max(env, err);
     sets->verbose      = args->verbose;
     sets->very_verbose = args->very_verbose;
-    sets->backlog      = p101_parse_positive_int(env, err, args->backlog, 0);
+    backlog            = p101_parse_positive_int(env, err, args->backlog, 0);
+    sets->backlog      = backlog;
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto done;
     }
 
     convert_address(env, err, args->ip_address_in, &sets->addr_in);
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto done;
     }
 
-    sets->port_in = parse_in_port_t(env, err, args->port_in);
+    port          = parse_in_port_t(env, err, args->port_in);
+    sets->port_in = port;
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto done;
     }
 
     convert_address(env, err, args->ip_address_out, &sets->addr_out);
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto done;
     }
 
-    sets->port_out = parse_in_port_t(env, err, args->port_out);
+    port           = parse_in_port_t(env, err, args->port_out);
+    sets->port_out = port;
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto done;
     }
 
     if(args->min_seconds)
     {
-        sets->min_seconds = parse_time_t(env, err, min_time_t, max_time_t, args->min_seconds);
+        parsed_time       = parse_time_t(env, err, min_time_t, max_time_t, args->min_seconds);
+        sets->min_seconds = parsed_time;
 
-        if(p101_error_has_error(err))
+        has_error = p101_error_has_error(err);
+        if(has_error)
         {
             goto done;
         }
@@ -278,9 +300,11 @@ void convert_arguments(const struct p101_env *env, struct p101_error *err, const
 
     if(args->max_seconds)
     {
-        sets->max_seconds = parse_time_t(env, err, min_time_t, max_time_t, args->max_seconds);
+        parsed_time       = parse_time_t(env, err, min_time_t, max_time_t, args->max_seconds);
+        sets->max_seconds = parsed_time;
 
-        if(p101_error_has_error(err))
+        has_error = p101_error_has_error(err);
+        if(has_error)
         {
             goto done;
         }
@@ -288,9 +312,11 @@ void convert_arguments(const struct p101_env *env, struct p101_error *err, const
 
     if(args->min_nanoseconds)
     {
-        sets->min_nanoseconds = p101_parse_long(env, err, args->min_nanoseconds, 0);
+        parsed_long           = p101_parse_long(env, err, args->min_nanoseconds, 0);
+        sets->min_nanoseconds = parsed_long;
 
-        if(p101_error_has_error(err))
+        has_error = p101_error_has_error(err);
+        if(has_error)
         {
             goto done;
         }
@@ -298,9 +324,11 @@ void convert_arguments(const struct p101_env *env, struct p101_error *err, const
 
     if(args->max_nanoseconds)
     {
-        sets->max_nanoseconds = p101_parse_long(env, err, args->max_nanoseconds, 0);
+        parsed_long           = p101_parse_long(env, err, args->max_nanoseconds, 0);
+        sets->max_nanoseconds = parsed_long;
 
-        if(p101_error_has_error(err))
+        has_error = p101_error_has_error(err);
+        if(has_error)
         {
             goto done;
         }
@@ -308,9 +336,11 @@ void convert_arguments(const struct p101_env *env, struct p101_error *err, const
 
     if(args->min_bytes)
     {
-        sets->min_bytes = p101_parse_unsigned_int(env, err, args->min_bytes, 0);
+        parsed_unsigned = p101_parse_unsigned_int(env, err, args->min_bytes, 0);
+        sets->min_bytes = parsed_unsigned;
 
-        if(p101_error_has_error(err))
+        has_error = p101_error_has_error(err);
+        if(has_error)
         {
             goto done;
         }
@@ -318,9 +348,11 @@ void convert_arguments(const struct p101_env *env, struct p101_error *err, const
 
     if(args->max_bytes)
     {
-        sets->max_bytes = p101_parse_unsigned_int(env, err, args->max_bytes, 0);
+        parsed_unsigned = p101_parse_unsigned_int(env, err, args->max_bytes, 0);
+        sets->max_bytes = parsed_unsigned;
 
-        if(p101_error_has_error(err))
+        has_error = p101_error_has_error(err);
+        if(has_error)
         {
             goto done;
         }

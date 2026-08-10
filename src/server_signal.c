@@ -18,6 +18,7 @@ static void sigint_handler(int signum);
 void setup_signal_handler(const struct p101_env *env, struct p101_error *err)
 {
     struct sigaction sa;
+    bool             has_error;
 
     P101_TRACE_SCOPE(env);
     p101_memset(env, &sa, 0, sizeof(sa));
@@ -33,7 +34,8 @@ void setup_signal_handler(const struct p101_env *env, struct p101_error *err)
 
     p101_sigemptyset(env, err, &sa.sa_mask);
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto done;
     }
@@ -41,7 +43,8 @@ void setup_signal_handler(const struct p101_env *env, struct p101_error *err)
     sa.sa_flags = 0;
     p101_sigaction(env, err, SIGINT, &sa, NULL);
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto done;
     }
@@ -59,7 +62,8 @@ void setup_signal_handler(const struct p101_env *env, struct p101_error *err)
 
     p101_sigemptyset(env, err, &sa.sa_mask);
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto done;
     }

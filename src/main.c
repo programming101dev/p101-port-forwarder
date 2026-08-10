@@ -20,22 +20,28 @@ int main(int argc, char *argv[])
     struct arguments   args;
     struct settings    sets;
     int                exit_code;
+    bool               has_error;
+    bool               no_error;
+    const char        *message;
 
     err = p101_error_create(true);
     env = p101_env_create(err, NULL);
     p101_memset(env, &args, 0, sizeof(args));
     parse_arguments(env, err, argc, argv, &args);
 
-    if(args.show_help && p101_error_has_no_error(err))
+    no_error = p101_error_has_no_error(err);
+    if(args.show_help && no_error)
     {
         usage(env, err, argv[0], EXIT_SUCCESS, NULL);
         exit_code = EXIT_SUCCESS;
         goto done;
     }
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
-        usage(env, err, argv[0], EXIT_FAILURE, p101_error_get_message(err));
+        message = p101_error_get_message(err);
+        usage(env, err, argv[0], EXIT_FAILURE, message);
         exit_code = EXIT_FAILURE;
         goto done;
     }
@@ -47,9 +53,11 @@ int main(int argc, char *argv[])
 
     check_arguments(env, err, &args);
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
-        usage(env, err, argv[0], EXIT_FAILURE, p101_error_get_message(err));
+        message = p101_error_get_message(err);
+        usage(env, err, argv[0], EXIT_FAILURE, message);
         exit_code = EXIT_FAILURE;
         goto done;
     }
@@ -57,14 +65,16 @@ int main(int argc, char *argv[])
     p101_memset(env, &sets, 0, sizeof(sets));
     convert_arguments(env, err, &args, &sets);
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto error;
     }
 
     run_server(env, err, &sets);
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto error;
     }
@@ -73,7 +83,8 @@ int main(int argc, char *argv[])
     goto done;
 
 error:
-    p101_fprintf(env, err, stderr, "Error: %s\n", p101_error_get_message(err));
+    message = p101_error_get_message(err);
+    p101_fprintf(env, err, stderr, "Error: %s\n", message);
     exit_code = EXIT_FAILURE;
 
 done:

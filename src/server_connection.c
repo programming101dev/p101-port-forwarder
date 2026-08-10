@@ -65,6 +65,17 @@ void handle_connection(const struct p101_env *env, struct p101_error *err, void 
     bool                from_started;
     bool                to_started;
     struct p101_error  *cleanup_err;
+    struct p101_error  *operation_err;
+    struct p101_error  *optional_error;
+    pthread_mutex_t    *mutex;
+    pthread_cond_t     *condition;
+    unsigned int        active_threads;
+    bool                has_error;
+    bool                exit_requested;
+    bool                local_error;
+    const char         *message;
+    int                 forward_socket;
+    int                 unlock_result;
 
     P101_TRACE_SCOPE(env);
     (void)sink;
@@ -74,9 +85,11 @@ void handle_connection(const struct p101_env *env, struct p101_error *err, void 
     to_started   = false;
     cleanup_err  = NULL;
 
-    data->forward_socket = p101_socket(env, err, data->sets->addr_out.ss_family, SOCK_STREAM, 0);
+    forward_socket       = p101_socket(env, err, data->sets->addr_out.ss_family, SOCK_STREAM, 0);
+    data->forward_socket = forward_socket;
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto error;
     }
@@ -108,7 +121,8 @@ void handle_connection(const struct p101_env *env, struct p101_error *err, void 
     p101_printf(env, err, "Connecting to server\n");
     p101_connect(env, err, data->forward_socket, (struct sockaddr *)&data->sets->addr_out, addr_len);
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto error;
     }
@@ -117,44 +131,57 @@ void handle_connection(const struct p101_env *env, struct p101_error *err, void 
     server_active_threads_reset(env);
     from_started = start_copy_thread(env, err, &from_forwarder, &from_data, data->sets, data->forward_socket, data->client_socket);
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto error;
     }
 
     to_started = start_copy_thread(env, err, &to_forwarder, &to_data, data->sets, data->client_socket, data->forward_socket);
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto error;
     }
 
     // wait for a thread to signal the condition
-    p101_pthread_mutex_lock(env, err, server_lock());
+    mutex = server_lock();
+    p101_pthread_mutex_lock(env, err, mutex);
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto error;
     }
 
     //    p101_printf(env, err, "active threads = %u\n", server_active_threads_load(env));
 
-    while(server_active_threads_load(env) > 0)
+    active_threads = server_active_threads_load(env);
+    while(active_threads > 0U)
     {
-        p101_printf(env, err, "active threads = %u\n", server_active_threads_load(env));
+        p101_printf(env, err, "active threads = %u\n", active_threads);
         p101_printf(env, err, "waiting on condition\n");
-        p101_pthread_cond_wait(env, err, server_cond(), server_lock());
-        if(p101_error_has_error(err))
+        condition = server_cond();
+        mutex     = server_lock();
+        p101_pthread_cond_wait(env, err, condition, mutex);
+        has_error = p101_error_has_error(err);
+        if(has_error)
         {
-            (void)p101_pthread_mutex_unlock(env, err, server_lock());
+            mutex         = server_lock();
+            unlock_result = p101_pthread_mutex_unlock(env, err, mutex);
+            (void)unlock_result;
             goto error;
         }
         p101_printf(env, err, "condition done\n");
+        active_threads = server_active_threads_load(env);
     }
 
-    p101_pthread_mutex_unlock(env, err, server_lock());
+    mutex = server_lock();
+    p101_pthread_mutex_unlock(env, err, mutex);
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto error;
     }
@@ -170,7 +197,8 @@ void handle_connection(const struct p101_env *env, struct p101_error *err, void 
         p101_pthread_join(env, err, to_forwarder, NULL);
     }
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto error;
     }
@@ -178,12 +206,14 @@ void handle_connection(const struct p101_env *env, struct p101_error *err, void 
     close_socket(env, err, &data->client_socket);
     close_socket(env, err, &data->forward_socket);
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         goto error;
     }
 
-    if(server_exit_requested())
+    exit_requested = server_exit_requested();
+    if(exit_requested)
     {
         next_state = CLEANUP;
     }
@@ -194,33 +224,40 @@ void handle_connection(const struct p101_env *env, struct p101_error *err, void 
     goto done;
 
 error:
-    cleanup_err = p101_error_create(false);
-    shutdown_socket(env, cleanup_err == NULL ? err : cleanup_err, data->client_socket, SHUT_RDWR);
-    shutdown_socket(env, cleanup_err == NULL ? err : cleanup_err, data->forward_socket, SHUT_RDWR);
+    cleanup_err   = p101_error_create(false);
+    operation_err = cleanup_err == NULL ? err : cleanup_err;
+    shutdown_socket(env, operation_err, data->client_socket, SHUT_RDWR);
+    shutdown_socket(env, operation_err, data->forward_socket, SHUT_RDWR);
 
     if(from_started)
     {
-        p101_pthread_join(env, cleanup_err == NULL ? err : cleanup_err, from_forwarder, NULL);
+        p101_pthread_join(env, operation_err, from_forwarder, NULL);
     }
 
     if(to_started)
     {
-        p101_pthread_join(env, cleanup_err == NULL ? err : cleanup_err, to_forwarder, NULL);
+        p101_pthread_join(env, operation_err, to_forwarder, NULL);
     }
 
-    close_socket(env, cleanup_err == NULL ? err : cleanup_err, &data->client_socket);
-    close_socket(env, cleanup_err == NULL ? err : cleanup_err, &data->forward_socket);
+    close_socket(env, operation_err, &data->client_socket);
+    close_socket(env, operation_err, &data->forward_socket);
     if(cleanup_err != NULL)
     {
-        if(p101_error_has_error(cleanup_err))
+        has_error = p101_error_has_error(cleanup_err);
+        if(has_error)
         {
-            p101_fprintf(env, cleanup_err, stderr, "Connection cleanup error: %s\n", p101_error_get_message(cleanup_err));
+            message = p101_error_get_message(cleanup_err);
+            p101_fprintf(env, cleanup_err, stderr, "Connection cleanup error: %s\n", message);
         }
         p101_error_destroy(cleanup_err);
     }
-    if(error_is_connection_local(err) && !server_exit_requested())
+    local_error    = error_is_connection_local(err);
+    exit_requested = server_exit_requested();
+    if(local_error && !exit_requested)
     {
-        p101_fprintf(env, NULL, stderr, "Connection error: %s\n", p101_error_get_message(err));
+        message        = p101_error_get_message(err);
+        optional_error = p101_error_optional();
+        p101_fprintf(env, optional_error, stderr, "Connection error: %s\n", message);
         p101_error_reset(err);
         next_state = ACCEPT;
     }
@@ -237,6 +274,7 @@ done:
 static bool start_copy_thread(const struct p101_env *env, struct p101_error *err, pthread_t *forwarder_thread, struct copy_data *data, const struct settings *sets, int from_socket, int to_socket)
 {
     bool started;
+    bool has_error;
 
     started       = false;
     data->env     = env;
@@ -247,7 +285,8 @@ static bool start_copy_thread(const struct p101_env *env, struct p101_error *err
     server_active_threads_increment(env);
     p101_pthread_create(env, err, forwarder_thread, NULL, copy_handler, data);
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
         server_active_threads_decrement(env);
     }
@@ -264,7 +303,12 @@ static void *copy_handler(void *arg)
     const struct p101_env *env;
     struct copy_data      *data;
     struct p101_error     *err;
+    struct p101_error     *optional_error;
     bool                   closed;
+    bool                   has_error;
+    pthread_mutex_t       *mutex;
+    pthread_cond_t        *condition;
+    const char            *message;
 
     data = (struct copy_data *)arg;
     env  = data->env;
@@ -273,7 +317,8 @@ static void *copy_handler(void *arg)
     if(err == NULL)
     {
         /* P101_ERROR_OPTIONAL rationale: the error object allocation itself failed. */
-        p101_fprintf(env, P101_ERROR_OPTIONAL, stderr, "Unable to create copy thread error object\n");
+        optional_error = p101_error_optional();
+        p101_fprintf(env, optional_error, stderr, "Unable to create copy thread error object\n");
         goto done;
     }
 
@@ -283,9 +328,11 @@ static void *copy_handler(void *arg)
 
         closed = copy(env, err, data->to_fd, data->from_fd, data->sets);
 
-        if(p101_error_has_error(err))
+        has_error = p101_error_has_error(err);
+        if(has_error)
         {
-            p101_fprintf(env, err, stderr, "Copy thread error: %s\n", p101_error_get_message(err));
+            message = p101_error_get_message(err);
+            p101_fprintf(env, err, stderr, "Copy thread error: %s\n", message);
             goto done;
         }
 
@@ -305,9 +352,12 @@ done:
     shutdown_socket(env, err, data->to_fd, SHUT_WR);
     p101_printf(env, err, "Ending thread\n");
     server_active_threads_decrement(env);
-    p101_pthread_mutex_lock(env, err, server_lock());
-    p101_pthread_cond_signal(env, err, server_cond());
-    p101_pthread_mutex_unlock(env, err, server_lock());
+    mutex = server_lock();
+    p101_pthread_mutex_lock(env, err, mutex);
+    condition = server_cond();
+    p101_pthread_cond_signal(env, err, condition);
+    mutex = server_lock();
+    p101_pthread_mutex_unlock(env, err, mutex);
     p101_error_destroy(err);
 
     return NULL;
@@ -318,26 +368,37 @@ static bool copy(const struct p101_env *env, struct p101_error *err, int to_fd, 
     uint8_t buffer[BUFFER_LEN];
     ssize_t bytes_read;
     bool    closed;
+    bool    has_error;
+    bool    retryable;
+    bool    connection_closed;
+    bool    exit_requested;
 
     closed = false;
     p101_printf(env, err, "Reading from %d to send to %d\n", from_fd, to_fd);
     bytes_read = p101_read(env, err, from_fd, buffer, BUFFER_LEN);
     p101_printf(env, err, "Read %zd from %d to send to %d\n", bytes_read, from_fd, to_fd);
 
-    if(p101_error_has_error(err))
+    has_error = p101_error_has_error(err);
+    if(has_error)
     {
-        if(error_is_retryable(err))
+        retryable = error_is_retryable(err);
+        if(retryable)
         {
             p101_error_reset(err);
-            if(server_exit_requested())
+            exit_requested = server_exit_requested();
+            if(exit_requested)
             {
                 closed = true;
             }
         }
-        else if(error_is_connection_closed(err))
+        else
         {
-            p101_error_reset(err);
-            closed = true;
+            connection_closed = error_is_connection_closed(err);
+            if(connection_closed)
+            {
+                p101_error_reset(err);
+                closed = true;
+            }
         }
 
         goto done;
@@ -357,8 +418,9 @@ static bool copy(const struct p101_env *env, struct p101_error *err, int to_fd, 
 
         do
         {
-            size_t  bytes_to_write;
-            ssize_t bytes_written;
+            size_t   bytes_to_write;
+            ssize_t  bytes_written;
+            uint32_t random_amount;
 
             if(sets->min_bytes == 0)
             {
@@ -372,7 +434,8 @@ static bool copy(const struct p101_env *env, struct p101_error *err, int to_fd, 
                 }
                 else
                 {
-                    bytes_to_write = p101_arc4random_uniform(env, sets->max_bytes - sets->min_bytes + 1) + sets->min_bytes;
+                    random_amount  = p101_arc4random_uniform(env, sets->max_bytes - sets->min_bytes + 1);
+                    bytes_to_write = random_amount + sets->min_bytes;
                 }
 
                 if(bytes_to_write > bytes_remaining)
@@ -386,12 +449,15 @@ static bool copy(const struct p101_env *env, struct p101_error *err, int to_fd, 
             bytes_written = p101_send(env, err, to_fd, &buffer[pos], bytes_to_write, 0);
             // #pragma GCC diagnostic pop
 
-            if(p101_error_has_error(err))
+            has_error = p101_error_has_error(err);
+            if(has_error)
             {
-                if(error_is_retryable(err))
+                retryable = error_is_retryable(err);
+                if(retryable)
                 {
                     p101_error_reset(err);
-                    if(server_exit_requested())
+                    exit_requested = server_exit_requested();
+                    if(exit_requested)
                     {
                         closed = true;
                         goto done;
@@ -399,7 +465,8 @@ static bool copy(const struct p101_env *env, struct p101_error *err, int to_fd, 
                     continue;
                 }
 
-                if(error_is_connection_closed(err))
+                connection_closed = error_is_connection_closed(err);
+                if(connection_closed)
                 {
                     p101_error_reset(err);
                     closed = true;
@@ -422,7 +489,8 @@ static bool copy(const struct p101_env *env, struct p101_error *err, int to_fd, 
                 p101_fflush(env, err, stdout);
                 p101_printf(env, err, "\n----\n");
             }
-            if(p101_error_has_error(err))
+            has_error = p101_error_has_error(err);
+            if(has_error)
             {
                 goto done;
             }
@@ -431,9 +499,12 @@ static bool copy(const struct p101_env *env, struct p101_error *err, int to_fd, 
             pos += (size_t)bytes_written;
             delay(env, err, sets->min_seconds, sets->max_seconds, sets->min_nanoseconds, sets->max_nanoseconds);
 
-            if(p101_error_has_error(err))
+            has_error = p101_error_has_error(err);
+            if(has_error)
             {
-                if(error_is_retryable(err) && server_exit_requested())
+                retryable      = error_is_retryable(err);
+                exit_requested = server_exit_requested();
+                if(retryable && exit_requested)
                 {
                     p101_error_reset(err);
                     closed = true;
@@ -451,54 +522,69 @@ done:
 #ifdef SIMPLE_PORT_FORWARDER_TESTING
 bool server_copy_once_for_test(const struct p101_env *env, struct p101_error *err, int to_fd, int from_fd, const struct settings *sets)
 {
-    return copy(env, err, to_fd, from_fd, sets);
+    bool closed;
+
+    closed = copy(env, err, to_fd, from_fd, sets);
+    return closed;
 }
 
 bool server_connection_error_is_local_for_test(const struct p101_error *err)
 {
-    return error_is_connection_local(err);
+    bool local;
+
+    local = error_is_connection_local(err);
+    return local;
 }
 #endif
 
 static bool error_is_connection_closed(const struct p101_error *err)
 {
-    if(p101_error_is_errno(err, EBADF))
-    {
-        return true;
-    }
+    bool is_bad_descriptor;
+    bool is_broken_pipe;
+    bool is_reset;
+    bool is_aborted;
+    bool closed;
 
-    if(p101_error_is_errno(err, EPIPE))
-    {
-        return true;
-    }
-
-    if(p101_error_is_errno(err, ECONNRESET))
-    {
-        return true;
-    }
-
-    if(p101_error_is_errno(err, ECONNABORTED))
-    {
-        return true;
-    }
-
-    return false;
+    is_bad_descriptor = p101_error_is_errno(err, EBADF);
+    is_broken_pipe    = p101_error_is_errno(err, EPIPE);
+    is_reset          = p101_error_is_errno(err, ECONNRESET);
+    is_aborted        = p101_error_is_errno(err, ECONNABORTED);
+    closed            = (is_bad_descriptor || is_broken_pipe || is_reset || is_aborted) != 0;
+    return closed;
 }
 
 static bool error_is_connection_local(const struct p101_error *err)
 {
-    return (p101_error_is_errno(err, ECONNABORTED) || p101_error_is_errno(err, ECONNREFUSED) || p101_error_is_errno(err, ECONNRESET) || p101_error_is_errno(err, EHOSTUNREACH) || p101_error_is_errno(err, ENETDOWN) || p101_error_is_errno(err, ENETUNREACH) ||
-            p101_error_is_errno(err, ENOTCONN) || p101_error_is_errno(err, EPIPE) || p101_error_is_errno(err, ETIMEDOUT)) != 0;
+    bool is_aborted;
+    bool is_refused;
+    bool is_reset;
+    bool is_host_unreachable;
+    bool is_network_down;
+    bool is_network_unreachable;
+    bool is_not_connected;
+    bool is_broken_pipe;
+    bool is_timed_out;
+    bool local;
+
+    is_aborted             = p101_error_is_errno(err, ECONNABORTED);
+    is_refused             = p101_error_is_errno(err, ECONNREFUSED);
+    is_reset               = p101_error_is_errno(err, ECONNRESET);
+    is_host_unreachable    = p101_error_is_errno(err, EHOSTUNREACH);
+    is_network_down        = p101_error_is_errno(err, ENETDOWN);
+    is_network_unreachable = p101_error_is_errno(err, ENETUNREACH);
+    is_not_connected       = p101_error_is_errno(err, ENOTCONN);
+    is_broken_pipe         = p101_error_is_errno(err, EPIPE);
+    is_timed_out           = p101_error_is_errno(err, ETIMEDOUT);
+    local                  = (is_aborted || is_refused || is_reset || is_host_unreachable || is_network_down || is_network_unreachable || is_not_connected || is_broken_pipe || is_timed_out) != 0;
+    return local;
 }
 
 static bool error_is_retryable(const struct p101_error *err)
 {
-    if(p101_error_is_errno(err, EINTR))
-    {
-        return true;
-    }
+    bool retryable;
 
-    return false;
+    retryable = p101_error_is_errno(err, EINTR);
+    return retryable;
 }
 
 static void shutdown_socket(const struct p101_env *env, struct p101_error *err, int socket, int how)
@@ -525,6 +611,7 @@ static void close_socket(const struct p101_env *env, struct p101_error *err, int
 static void delay(const struct p101_env *env, struct p101_error *err, time_t min_seconds, time_t max_seconds, long min_nanoseconds, long max_nanoseconds)
 {
     struct timespec tim;
+    long            random_value;
 
     if(min_seconds == 0 && max_seconds == 0 && min_nanoseconds == 0 && max_nanoseconds == 0)
     {
@@ -538,8 +625,10 @@ static void delay(const struct p101_env *env, struct p101_error *err, time_t min
     }
     else
     {
-        tim.tv_sec  = generate_random_long(env, min_seconds, max_seconds);
-        tim.tv_nsec = generate_random_long(env, min_nanoseconds, max_nanoseconds);
+        random_value = generate_random_long(env, min_seconds, max_seconds);
+        tim.tv_sec   = random_value;
+        random_value = generate_random_long(env, min_nanoseconds, max_nanoseconds);
+        tim.tv_nsec  = random_value;
     }
 
     p101_nanosleep(env, err, &tim, NULL);
@@ -553,10 +642,13 @@ static long generate_random_long(const struct p101_env *env, long min, long max)
     uintmax_t limit;
     uintmax_t num;
     uintmax_t range;
+    uint32_t  random_value;
+    long      result;
 
     if(min == max)
     {
-        return min;
+        result = min;
+        goto done;
     }
 
     range = (uintmax_t)(max - min) + UINTMAX_C(1);
@@ -568,11 +660,15 @@ static long generate_random_long(const struct p101_env *env, long min, long max)
 
         for(size_t i = 0; i < sizeof(num); i += sizeof(uint32_t))
         {
-            num = (num << 32) | p101_arc4random(env);    // NOLINT(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+            random_value = p101_arc4random(env);
+            num          = (num << 32) | random_value;    // NOLINT(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
         }
     } while(num >= limit);
 
-    return min + (long)(num % range);
+    result = min + (long)(num % range);
+
+done:
+    return result;
 }
 
 void cleanup(const struct p101_env *env, struct p101_error *err, void *arg, struct p101_fsm_effect_sink *sink, struct p101_fsm_decision *decision)
