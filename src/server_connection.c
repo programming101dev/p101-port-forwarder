@@ -256,7 +256,7 @@ error:
     if(local_error && !exit_requested)
     {
         message        = p101_error_get_message(err);
-        optional_error = p101_error_optional();
+        optional_error = P101_ERROR_OPTIONAL;
         p101_fprintf(env, optional_error, stderr, "Connection error: %s\n", message);
         p101_error_reset(err);
         next_state = ACCEPT;
@@ -317,7 +317,7 @@ static void *copy_handler(void *arg)
     if(err == NULL)
     {
         /* P101_ERROR_OPTIONAL rationale: the error object allocation itself failed. */
-        optional_error = p101_error_optional();
+        optional_error = P101_ERROR_OPTIONAL;
         p101_fprintf(env, optional_error, stderr, "Unable to create copy thread error object\n");
         goto done;
     }
