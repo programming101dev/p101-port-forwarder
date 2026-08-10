@@ -1,4 +1,4 @@
-set(PROJECT_NAME "simple-port-forwarder")
+set(PROJECT_NAME "p101-port-forwarder")
 set(PROJECT_VERSION "1.0.0")
 set(PROJECT_DESCRIPTION "Simple Port Forwarder")
 set(PROJECT_LANGUAGE "C")
@@ -25,10 +25,11 @@ set(BSD_STANDARD_FLAGS
 )
 
 # Define targets
-set(EXECUTABLE_TARGETS main)
+set(EXECUTABLE_TARGETS p101_port_forwarder)
+set(p101_port_forwarder_OUTPUT_NAME p101-port-forwarder)
 set(LIBRARY_TARGETS "")
 
-set(main_SOURCES
+set(p101_port_forwarder_SOURCES
         src/cli.c
         src/main.c
         src/convert.c
@@ -40,7 +41,7 @@ set(main_SOURCES
         src/server_state.c
 )
 
-set(main_HEADERS
+set(p101_port_forwarder_HEADERS
         include/cli.h
         include/convert.h
         include/server.h
@@ -52,7 +53,7 @@ set(main_HEADERS
         include/server_state.h
 )
 
-set(main_LINK_LIBRARIES
+set(p101_port_forwarder_LINK_LIBRARIES
         p101_error
         p101_env
         p101_c

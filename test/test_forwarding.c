@@ -273,7 +273,7 @@ done:
     p101_error_destroy(err);
     if(status == 0)
     {
-        (void)puts("simple-port-forwarder tests passed");
+        (void)puts("p101-port-forwarder tests passed");
     }
     return status;
 }

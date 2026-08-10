@@ -1,6 +1,6 @@
-# simple-port-forwarder Repository Guide
+# p101-port-forwarder Repository Guide
 
-Welcome to the `simple-port-forwarder` repository — a small TCP port forwarder built on the p101 libraries. This guide will help you set up, build, and run the program.
+Welcome to the `p101-port-forwarder` repository — a small TCP port forwarder built on the p101 libraries. This guide will help you set up, build, and run the program.
 
 ## **Table of Contents**
 
@@ -17,13 +17,13 @@ Welcome to the `simple-port-forwarder` repository — a small TCP port forwarder
 Clone the repository using the following command:
 
 ```bash
-git clone https://github.com/programming101dev/simple-port-forwarder.git
+git clone https://github.com/programming101dev/p101-port-forwarder.git
 ```
 
 Navigate to the cloned directory:
 
 ```bash
-cd simple-port-forwarder
+cd p101-port-forwarder
 ```
 
 Ensure the scripts are executable:
@@ -81,11 +81,11 @@ router, firewall, DNS, or third-party TCP behavior.
 
 ## **Running**
 
-The binary lands in the configured build directory (e.g. `build-clang/main`). Run it with no arguments to see the usage message listing the required listening/forwarding addresses, ports, and backlog.
+The binary lands in the configured build directory (e.g. `build-clang/p101-port-forwarder`). Run it with no arguments to see the usage message listing the required listening/forwarding addresses, ports, and backlog.
 
 ## **Adding or Removing Files**
 
-The `CMakeLists.txt` is fixed and shared across every repository — do not edit it. When you add or remove a source or header, edit the lists in `config.cmake` (`main_SOURCES`, `main_HEADERS`, and `main_LINK_LIBRARIES`), then re-configure and build:
+The `CMakeLists.txt` is fixed and shared across every repository — do not edit it. When you add or remove a source or header, edit the `p101_port_forwarder_*` lists in `config.cmake`, then re-configure and build:
 
 ```bash
 ./change-compiler.sh -c <compiler>
